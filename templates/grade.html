@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>批改评分 - 作业批改系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📝 批改评分</h1>
+            <a href="{{ url_for('index') }}" class="back-link">← 返回首页</a>
+        </header>
+
+        <!-- 评分模式状态 -->
+        <section class="card grading-mode">
+            <h2>🤖 评分模式
+                {% if api_available and vision_models %}
+                <span class="badge badge-ai">智谱AI 视觉评分</span>
+                <span class="badge badge-model">{{ api_model }}</span>
+                {% else %}
+                <span class="badge badge-fallback">关键词回退评分</span>
+                {% endif %}
+            </h2>
+            {% if not api_available %}
+            <p class="hint">💡 完成评分后，请设置环境变量 <code>ZHIPU_API_KEY</code> 启用AI视觉评分</p>
+            {% endif %}
+        </section>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- 全局操作 -->
+        <section class="actions">
+            <a href="{{ url_for('export') }}" class="btn btn-success">📊 导出 Excel</a>
+            <a href="{{ url_for('export_html') }}" class="btn btn-info">📄 导出 HTML 报告</a>
+            <button onclick="exportAllImages()" class="btn btn-secondary">🖼️ 打包下载所有截图</button>
+        </section>
+
+        <!-- 评分汇总 -->
+        <section class="summary-bar card">
+            <div class="stat">
+                <span class="stat-label">总文档数</span>
+                <span class="stat-value">{{ results|length }}</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">平均分</span>
+                <span class="stat-value">{{ "%.1f"|format(results|map(attribute='score')|sum / results|length) if results else 0 }}</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">最高分</span>
+                <span class="stat-value high">{{ results|map(attribute='score')|max if results else 0 }}</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">最低分</span>
+                <span class="stat-value low">{{ results|map(attribute='score')|min if results else 0 }}</span>
+            </div>
+        </section>
+
+        <!-- 逐个文档评分 -->
+        {% for result in results %}
+        <section class="result-card card" id="result-{{ result.id }}">
+            <div class="result-header">
+                <div class="student-info">
+                    <h2>
+                        {{ result.name or '未知姓名' }}
+                        <small>{{ result.student_id or '无学号' }}</small>
+                    </h2>
+                    <p class="meta">
+                        班级：{{ result.class_name or '无' }} |
+                        课程：{{ result.course or '无' }} |
+                        实验：{{ result.experiment or '无' }}
+                    </p>
+                </div>
+                <div class="score-display">
+                    <div class="score-ring {{ 'high' if result.score >= 90 }}{{ 'mid' if result.score >= 75 and result.score < 90 }}{{ 'low' if result.score < 75 }}">
+                        <span class="score-number">{{ result.score }}</span>
+                        <span class="score-label">分</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 评分调整 -->
+            <div class="score-adjust">
+                <form class="score-form" data-id="{{ result.id }}">
+                    <label>调整分数：</label>
+                    <input type="number" class="score-input" value="{{ result.score }}" min="0" max="100">
+                    <label>评语：</label>
+                    <input type="text" class="comment-input" value="{{ result.comment }}" size="50">
+                    <button type="submit" class="btn btn-sm btn-primary">更新</button>
+                </form>
+            </div>
+
+            <!-- 图片预览 -->
+            {% if result.images %}
+            <div class="image-gallery">
+                <h3>📸 实验截图 ({{ result.image_count }} 张)</h3>
+                <div class="gallery-grid">
+                    {% for img in result.images %}
+                    <div class="gallery-item">
+                        <a href="{{ img.url }}" target="_blank">
+                            <img src="{{ img.url }}" alt="截图" loading="lazy">
+                        </a>
+                        <span class="image-size">{{ "%.1f"|format(img.size / 1024) }} KB</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% else %}
+            <div class="no-images">
+                <p>⚠️ 该文档未检测到截图</p>
+            </div>
+            {% endif %}
+
+            <!-- 内容预览 -->
+            {% if result.text_preview %}
+            <details class="text-preview">
+                <summary>📄 文档内容预览</summary>
+                <pre>{{ result.text_preview }}</pre>
+            </details>
+            {% endif %}
+        </section>
+        {% endfor %}
+
+        <!-- 如果没有结果 -->
+        {% if not results %}
+        <section class="empty-state card">
+            <p>😕 没有找到可批改的文档</p>
+            <a href="{{ url_for('index') }}" class="btn btn-primary">返回上传文档</a>
+        </section>
+        {% endif %}
+    </div>
+
+    <script>
+    // 异步更新分数
+    document.querySelectorAll('.score-form').forEach(form => {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = form.dataset.id;
+            const score = form.querySelector('.score-input').value;
+            const comment = form.querySelector('.comment-input').value;
+
+            const res = await fetch('{{ url_for("update_score") }}', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({id, score, comment})
+            });
+
+            if (res.ok) {
+                // 更新页面上的分数显示
+                const ring = document.querySelector(`#result-${id} .score-number`);
+                if (ring) ring.textContent = score;
+                form.querySelector('.btn').textContent = '✓ 已更新';
+                setTimeout(() => {
+                    form.querySelector('.btn').textContent = '更新';
+                }, 2000);
+            }
+        });
+    });
+
+    // 导出所有图片
+    function exportAllImages() {
+        alert('图片已保存在 images/ 目录中，可直接在文件夹中查看。\n路径：' + window.location.origin + '/images/');
+    }
+    </script>
+</body>
+</html>

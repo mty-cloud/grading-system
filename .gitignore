@@ -1,0 +1,14 @@
+.env
+uploads/
+images/
+reports/
+__pycache__/
+.venv/
+.idea/
+*.xlsx
+批改报告.html
+.grading_results.json
+build/
+dist/
+*.spec
+__pycache__/

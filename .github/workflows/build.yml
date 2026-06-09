@@ -1,0 +1,108 @@
+name: 构建exe安装包
+
+on:
+  push:
+    tags:
+      - 'v*'   # 推送 v1.0, v2.0 等标签时自动构建
+  workflow_dispatch:  # 也可以在GitHub页面上手动触发
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: 签出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: 构建 exe
+        run: |
+          pyinstaller --clean --onefile ^
+            --add-data "templates;templates" ^
+            --add-data "static;static" ^
+            --hidden-import openpyxl ^
+            --hidden-import openpyxl.cell._writer ^
+            --hidden-import docx ^
+            --hidden-import docx.opc ^
+            --hidden-import requests ^
+            --hidden-import flask ^
+            --hidden-import werkzeug ^
+            --hidden-import jinja2 ^
+            --hidden-import markupsafe ^
+            --hidden-import itsdangerous ^
+            --hidden-import click ^
+            --hidden-import blinker ^
+            --hidden-import urllib3 ^
+            --exclude-module tkinter ^
+            --exclude-module PIL ^
+            --exclude-module matplotlib ^
+            --exclude-module numpy ^
+            --exclude-module pandas ^
+            --console ^
+            --name "作业批改系统" ^
+            app.py
+
+      - name: 上传 exe 到发布页
+        uses: actions/upload-artifact@v4
+        with:
+          name: 作业批改系统-Windows
+          path: dist/作业批改系统.exe
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: 签出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: 构建 Mac 应用
+        run: |
+          pyinstaller --clean --onefile \
+            --add-data "templates:templates" \
+            --add-data "static:static" \
+            --hidden-import openpyxl \
+            --hidden-import openpyxl.cell._writer \
+            --hidden-import docx \
+            --hidden-import docx.opc \
+            --hidden-import requests \
+            --hidden-import flask \
+            --hidden-import werkzeug \
+            --hidden-import jinja2 \
+            --hidden-import markupsafe \
+            --hidden-import itsdangerous \
+            --hidden-import click \
+            --hidden-import blinker \
+            --hidden-import urllib3 \
+            --exclude-module tkinter \
+            --exclude-module PIL \
+            --exclude-module matplotlib \
+            --exclude-module numpy \
+            --exclude-module pandas \
+            --console \
+            --name "作业批改系统" \
+            app.py
+
+      - name: 上传 Mac 应用到发布页
+        uses: actions/upload-artifact@v4
+        with:
+          name: 作业批改系统-Mac
+          path: dist/作业批改系统
