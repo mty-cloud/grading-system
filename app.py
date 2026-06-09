@@ -81,279 +81,41 @@ os.makedirs(REPORTS_FOLDER, exist_ok=True)
 ZHIPU_BASE_URL = "https://open.bigmodel.cn/api/paas/v4/"
 
 def build_grading_prompt(text):
-    prompt = f"""你是一个严格的大学实验报告评分助手。请分析截图和文字内容。
+    """让AI自主判断，不给过多条框"""
+    excerpt = text[:3000] if text else "(无)"
+    return f"""你是严格的实验报告评分助手。请根据以下实验报告的文字内容和截图，给出0-100分的评分。
 
-## 学生文字内容
+## 文字内容
 ```
-{text[:3000]}
+{excerpt}
 ```
 
-## 第一步：定等级（必须从下面5个等级中选择1个）
-A级 - 优秀(90-95分): 操作完全正确，截图清晰完整，文字充实有深度
-B级 - 良好(75-84分): 操作基本正确，截图完整，文字完整无硬伤
-C级 - 中等(65-74分): 操作有缺陷或报错，截图不完整，文字有重复
-D级 - 及格(50-64分): 明显缺陷，截图缺失或质量差，文字敷衍
-E级 - 差(0-49分): 严重缺失，几乎无截图，内容空洞
+## 要求
+1. 根据你的判断客观评分，不要刻意打高分
+2. 文字质量（实验目的、步骤、总结是否完整，有无深度）和截图质量都要考虑
+3. 差的报告给低分（0-40），一般的给中等分（40-70），优秀的给高分（70-100）
+4. 截图数量和质量是重要判断依据
+5. 如果文字明显敷衍、大量重复、内容过少，必须给低分
 
-## 第二步：在等级区间内精确打分。A级需很优秀才能得90+
-
-## 扣分硬规则
-- 截图少于2张：降一级
-- 文字少于500字：降一级
-- 完全没有实验总结：总分最高70
-- 内容大量重复：降一级
-
-## 输出要求
-纯JSON：
-{{"grade":"A/B/C/D/E","image_score":<0-50>,"text_score":<0-30>,"tech_score":<0-20>,"total_score":<0-100>,"analysis":"概括","text_feedback":"文字评价","image_feedback":"截图评价"}}"""
-    return prompt
-
-
+## 输出JSON格式
+{{"image_score":0-50,"text_score":0-30,"tech_score":0-20,"total_score":0-100,"analysis":"一句话评价","text_feedback":"文字评价","image_feedback":"截图评价"}}"""
 def build_text_only_prompt(text):
-    prompt = f"""你是严格的大学实验报告评分助手。以下报告没有提交截图。
+    """无截图评分 - 让AI自主判断"""
+    excerpt = text[:4000] if text else "(无)"
+    return f"""你是严格的实验报告评分助手。以下实验报告完全没有截图，请仅根据文字内容评分。
 
-## 学生文字内容
+## 文字内容
 ```
-{text[:4000]}
-```
-
-## 定等级
-A级(85-90): 目的+步骤+总结齐全，内容充实有深度，技术细节丰富
-B级(70-79): 基本完整，有一定深度
-C级(60-69): 包含主要要素但简略或有重复
-D级(40-59): 内容残缺或极其简略
-E级(0-39): 几乎无内容
-
-## 硬扣分规则
-- 无截图：总分上限75
-- 文字<300字：总分上限30
-- 文字300-500字：总分上限50
-- 无总结：总分上限60
-- 大量重复：总分上限50
-
-## 输出要求
-纯JSON：
-{{"grade":"A/B/C/D/E","content_score":<0-30>,"tech_score":<0-25>,"summary_score":<0-25>,"format_score":<0-20>,"total_score":<0-100>,"analysis":"概括","text_feedback":"具体评价"}}"""
-    return prompt
-
-
-def is_zhipu_available():
-    """检查智谱AI API Key是否配置"""
-    return bool(ZHIPU_API_KEY)
-
-
-def get_available_vision_models():
-    """返回可用模型信息"""
-    if ZHIPU_API_KEY:
-        return [ZHIPU_MODEL]
-    return []
-
-
-def image_to_base64(image_path):
-    """将图片转为base64编码"""
-    with open(image_path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
-
-
-def analyze_image_with_zhipu(image_path, text):
-    """调用智谱AI视觉模型分析单张截图（结合文字内容）"""
-    if not ZHIPU_API_KEY:
-        return {"error": "未配置智谱API Key"}
-
-    try:
-        image_b64 = image_to_base64(image_path)
-        image_mime = "image/png"
-        if image_path.lower().endswith(('.jpg', '.jpeg')):
-            image_mime = "image/jpeg"
-        elif image_path.lower().endswith('.gif'):
-            image_mime = "image/gif"
-        elif image_path.lower().endswith('.webp'):
-            image_mime = "image/webp"
-
-        data_url = f"data:{image_mime};base64,{image_b64}"
-        grading_prompt = build_grading_prompt(text)
-
-        payload = {
-            "model": ZHIPU_MODEL,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                        {"type": "text", "text": grading_prompt}
-                    ]
-                }
-            ],
-            "temperature": 0.1,
-            "max_tokens": 1024
-        }
-
-        headers = {
-            "Authorization": f"Bearer {ZHIPU_API_KEY}",
-            "Content-Type": "application/json"
-        }
-
-        resp = requests.post(
-            f"{ZHIPU_BASE_URL}chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=120
-        )
-
-        if resp.status_code != 200:
-            return {"error": f"智谱API返回错误 ({resp.status_code}): {resp.text[:200]}"}
-
-        result = resp.json()
-        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-
-        if not content:
-            return {"error": "智谱API返回为空"}
-
-        # 从回复中提取JSON（支持纯JSON或markdown代码块包裹）
-        cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', content.strip(), flags=re.MULTILINE)
-        json_match = re.search(r'\{.*"total_score".*\}', cleaned, re.DOTALL)
-        if json_match:
-            try:
-                data = json.loads(json_match.group())
-                return data
-            except json.JSONDecodeError as e:
-                return {"error": f"JSON解析失败: {str(e)}, 原始输出: {content[:200]}"}
-        else:
-            return {"error": f"无法解析模型输出: {content[:300]}"}
-
-    except requests.Timeout:
-        return {"error": "智谱API请求超时（120s），图片可能过大"}
-    except Exception as e:
-        return {"error": f"分析失败: {str(e)}"}
-
-
-def build_text_only_prompt(text):
-    """构建纯文字评分提示词（无截图时使用，严格压低分数）"""
-    text_excerpt = text[:4000] if text else "(无文字内容)"
-
-    prompt = f"""你是一个严格的大学实验报告评分助手。以下实验报告完全没有提交截图，请根据纯文字内容评分。
-
-## 学生文字内容
-```
-{text_excerpt}
+{excerpt}
 ```
 
-## 评分标准（满分100分）
+## 要求
+1. 根据文字内容的质量独立打分，不要因为没截图就心软
+2. 缺截图是严重缺陷，最高75分
+3. 内容完整充实可以给较高分，内容空洞敷衍必须给低分
 
-### 内容完整性 (0-30分)
-- 结构完整，目的/步骤/总结齐全，内容充实: 25-30分
-- 包含大部分要素但不够完整: 15-24分
-- 内容残缺或过于简略: 0-14分
-
-### 技术深度 (0-25分)
-- 有具体命令、配置、代码片段: 20-25分
-- 有技术描述但不够具体: 10-19分
-- 几乎没有技术内容: 0-9分
-
-### 总结反思 (0-25分)
-- 总结有深度，问题分析到位，有解决方案: 20-25分
-- 有总结但比较表面: 10-19分
-- 没有总结或只有套话: 0-9分
-
-### 格式与规范 (0-20分)
-- 内容精炼，无重复，排版规范: 15-20分
-- 少量重复，基本规范: 8-14分
-- 大量重复内容或排版混乱: 0-7分
-
-## 严格扣分规则
-- 文字<300字：总分上限35分
-- 文字300-500字：总分上限50分
-- 完全没有实验总结：总分上限60分
-- 内容大量重复（占全文30%以上）：总分上限45分
-- 没有提交任何截图：直接扣15分，且总分上限70分
-
-## 输出要求
-纯JSON格式：
-{{"content_score":<0-30>,"tech_score":<0-25>,"summary_score":<0-25>,"format_score":<0-20>,"total_score":<0-100>,"analysis":"优缺点概括","text_feedback":"具体评价"}}"""
-    return prompt
-
-
-def ai_grade_text_only(text):
-    """无截图时，使用AI纯文字评分"""
-    if not ZHIPU_API_KEY:
-        return auto_grade_fallback(text, [])
-
-    try:
-        prompt = build_text_only_prompt(text)
-
-        payload = {
-            "model": ZHIPU_MODEL,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt}
-                    ]
-                }
-            ],
-            "temperature": 0.1,
-            "max_tokens": 1024
-        }
-
-        headers = {
-            "Authorization": f"Bearer {ZHIPU_API_KEY}",
-            "Content-Type": "application/json"
-        }
-
-        print("  📝 正在AI文字评分（无截图）...")
-        resp = requests.post(
-            f"{ZHIPU_BASE_URL}chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=60
-        )
-
-        if resp.status_code != 200:
-            print(f"  ⚠️ AI文字评分API错误: {resp.status_code}")
-            return auto_grade_fallback(text, [])
-
-        result = resp.json()
-        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-
-        if not content:
-            return auto_grade_fallback(text, [])
-
-        cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', content.strip(), flags=re.MULTILINE)
-        json_match = re.search(r'\{.*"total_score".*\}', cleaned, re.DOTALL)
-        if json_match:
-            data = json.loads(json_match.group())
-            score = data.get("total_score", 50)
-            analysis = data.get("analysis", "")
-            feedback = data.get("text_feedback", "")
-
-            comments = []
-            if score >= 90:
-                comments.append("🎉 文字内容质量优秀！")
-            elif score >= 75:
-                comments.append("✅ 文字内容良好。")
-            elif score >= 60:
-                comments.append("⚠️ 文字内容基本合格。")
-            elif score >= 40:
-                comments.append("⚠️ 文字内容不够充分，需要补充。")
-            else:
-                comments.append("❌ 文字内容严重不足。")
-
-            comments.append(f"⚠️ 该报告未提交任何实验截图，已根据评分规则扣分")
-            if analysis:
-                comments.append(f"📝 {analysis}")
-            if feedback:
-                comments.append(f"📝 评价: {feedback}")
-
-            print(f"  ✅ AI文字评分完成: {score}分")
-            return score, "；".join(comments)
-
-        return auto_grade_fallback(text, [])
-
-    except Exception as e:
-        print(f"  ⚠️ AI文字评分异常: {e}")
-        return auto_grade_fallback(text, [])
-
-
+## 输出JSON格式
+{{"content_score":0-30,"tech_score":0-25,"summary_score":0-25,"format_score":0-20,"total_score":0-100,"analysis":"一句话评价","text_feedback":"具体评价"}}"""
 def calibrate_score(score, text, images):
     '''AI评分后硬性校准，强制拉开区分度'''
     import re
