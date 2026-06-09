@@ -58,8 +58,15 @@ app = Flask(__name__,
             static_folder=resource_path('static'))
 app.secret_key = "grading_secret_key_2024"
 
-# 路径配置（数据目录放在exe同目录下，资源文件在打包目录内）
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# 路径配置（数据/导出文件放在exe同目录，资源模板在打包目录内）
+def _exe_dir():
+    """获取exe所在目录（打包后）或源码目录（开发时）"""
+    try:
+        return os.path.dirname(os.path.abspath(sys.executable))
+    except Exception:
+        return os.path.dirname(os.path.abspath(__file__))
+
+BASE_DIR = _exe_dir()
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 IMAGE_FOLDER = os.path.join(BASE_DIR, "images")
 REPORTS_FOLDER = os.path.join(BASE_DIR, "reports")
