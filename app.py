@@ -25,22 +25,32 @@ def resource_path(relative_path):
         base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
 
-# ===== 自动加载 .env 文件（开发环境）或使用内置配置（打包环境） =====
+# ===== API Key 配置（优先级：.env 文件 > 代码内置默认值） =====
 ZHIPU_API_KEY = "ae0c33227c2542659ae03872244959cb.hcjuR7slRxiPPROU"
 ZHIPU_MODEL = "glm-4v-flash"
 
-_env_path = resource_path('.env')
-if os.path.exists(_env_path):
-    with open(_env_path, 'r', encoding='utf-8') as _f:
-        for _line in _f:
-            _line = _line.strip()
-            if _line and not _line.startswith('#'):
-                if '=' in _line:
-                    _k, _v = _line.split('=', 1)
-                    if _k.strip() == 'ZHIPU_API_KEY':
-                        ZHIPU_API_KEY = _v.strip()
-                    elif _k.strip() == 'ZHIPU_MODEL':
-                        ZHIPU_MODEL = _v.strip()
+# 依次查找 .env：exe同目录 → 开发目录 → 打包内部
+_env_candidates = []
+try:
+    _env_candidates.append(os.path.join(os.path.dirname(sys.executable), '.env'))
+except Exception:
+    pass
+_env_candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
+_env_candidates.append(resource_path('.env'))
+
+for _env_path in _env_candidates:
+    if os.path.exists(_env_path):
+        with open(_env_path, 'r', encoding='utf-8') as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if _line and not _line.startswith('#'):
+                    if '=' in _line:
+                        _k, _v = _line.split('=', 1)
+                        if _k.strip() == 'ZHIPU_API_KEY':
+                            ZHIPU_API_KEY = _v.strip()
+                        elif _k.strip() == 'ZHIPU_MODEL':
+                            ZHIPU_MODEL = _v.strip()
+        break
 # ==============================
 
 import requests
@@ -68,9 +78,7 @@ os.makedirs(REPORTS_FOLDER, exist_ok=True)
 
 # ========== 智谱AI 视觉评分模块 ==========
 
-ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY", "")
 ZHIPU_BASE_URL = "https://open.bigmodel.cn/api/paas/v4/"
-ZHIPU_MODEL = os.getenv("ZHIPU_MODEL", "glm-4v-flash")
 
 def build_grading_prompt(text):
     """构建综合评分提示词（包含文字+图片分析）"""
