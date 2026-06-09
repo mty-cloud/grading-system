@@ -400,8 +400,11 @@ def ai_grade_with_zhipu(text, images):
         score = result.get("total_score", 60)
         total_scores.append(score)
 
-        text_fb = result.get("text_feedback", "")
-        image_fb = result.get("image_feedback", "")
+        # AI返回的字段确保转为字符串，防止dict等不可hash类型导致报错
+        raw_text_fb = result.get("text_feedback", "")
+        raw_image_fb = result.get("image_feedback", "")
+        text_fb = str(raw_text_fb) if raw_text_fb else ""
+        image_fb = str(raw_image_fb) if raw_image_fb else ""
         if text_fb:
             text_feedbacks.append(text_fb)
         if image_fb:
@@ -448,14 +451,20 @@ def ai_grade_with_zhipu(text, images):
     comments.append(f"截图评分 {image_score_avg:.0f}/60 分，文字评分 {text_score_avg:.0f}/40 分")
 
     if text_feedbacks:
-        unique_text = list(dict.fromkeys(text_feedbacks))
-        for fb in unique_text[:2]:
-            comments.append(f"📝 文字: {fb}")
+        seen = set()
+        for fb in text_feedbacks:
+            if fb not in seen:
+                seen.add(fb)
+                if len(seen) <= 2:
+                    comments.append(f"📝 文字: {fb}")
 
     if image_feedbacks:
-        unique_img = list(dict.fromkeys(image_feedbacks))
-        for fb in unique_img[:2]:
-            comments.append(f"🖼️ 截图: {fb}")
+        seen = set()
+        for fb in image_feedbacks:
+            if fb not in seen:
+                seen.add(fb)
+                if len(seen) <= 2:
+                    comments.append(f"🖼️ 截图: {fb}")
 
     if len(all_findings) > 1:
         for f in all_findings:
