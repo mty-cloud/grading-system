@@ -1,203 +1,305 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>作业批改系统</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>作业批改系统</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>📚 作业批改系统</h1>
-            <p class="subtitle">支持上传Word文档，自动提取学生信息与截图，Ollama AI视觉评分</p>
-        </header>
 
-        <!-- Ollama 状态 -->
-        <section class="ollama-status card">
-            <h2>🤖 AI评分引擎</h2>
-            <div id="ollama-status-content">
-                <p class="hint">正在检测Ollama服务... <span class="spinner"></span></p>
-            </div>
-        </section>
+<!-- 顶部导航 -->
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="/" class="topbar-brand">
+      <span class="topbar-brand-icon">📚</span>
+      作业批改系统
+    </a>
+    <div class="topbar-nav">
+      <a href="/">首页</a>
+      <a href="/grade" class="primary">⚡ 开始批改</a>
+    </div>
+  </div>
+</div>
 
-        <!-- Flash 消息 -->
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="flash {{ category }}">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
+<!-- 加载动画 -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loadingText">正在评分，请稍候...</div>
+</div>
 
-        <!-- 上传区域 -->
-        <section class="upload-section card">
-            <h2>📤 上传学生作业</h2>
-            <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
-                <div class="file-upload-area">
-                    <div class="upload-mode-toggle">
-                        <label class="toggle-btn">
-                            <input type="radio" name="upload_mode" value="files" checked onchange="toggleUploadMode()"> 📄 选择文件
-                        </label>
-                        <label class="toggle-btn">
-                            <input type="radio" name="upload_mode" value="folder" onchange="toggleUploadMode()"> 📁 选择文件夹
-                        </label>
-                    </div>
-                    <input type="file" name="files" accept=".docx" multiple id="file-input">
-                    <input type="file" name="folder" webkitdirectory id="folder-input" style="display:none">
-                    <p class="hint">支持批量上传 .docx 格式的实验报告，或直接选择学生作业文件夹</p>
-                </div>
-                <button type="submit" class="btn btn-primary">上传文档</button>
-            </form>
-        </section>
+<div class="container">
 
-        <script>
-        function toggleUploadMode() {
-            const mode = document.querySelector('input[name="upload_mode"]:checked').value;
-            document.getElementById('file-input').style.display = mode === 'files' ? '' : 'none';
-            document.getElementById('folder-input').style.display = mode === 'folder' ? '' : 'none';
-        }
-        // Fix: folder upload needs to send files under 'files' key too
-        document.querySelector('form').addEventListener('submit', function(e) {
-            const mode = document.querySelector('input[name="upload_mode"]:checked').value;
-            if (mode === 'folder') {
-                const folderInput = document.getElementById('folder-input');
-                if (folderInput.files.length > 0) {
-                    // Replace the file input with folder input data
-                    // The backend reads from 'files' key - we use FormData trick
-                    e.preventDefault();
-                    const formData = new FormData(this);
-                    formData.delete('files');
-                    formData.delete('folder');
-                    for (const f of folderInput.files) {
-                        // Preserve relative path for better file naming
-                        formData.append('files', f, f.webkitRelativePath || f.name);
-                    }
-                    fetch('{{ url_for("upload") }}', {
-                        method: 'POST',
-                        body: formData
-                    }).then(r => {
-                        if (r.redirected) window.location.href = r.url;
-                        else window.location.reload();
-                    });
-                    return false;
-                }
-            }
-        });
-        </script>
-        </section>
+  <!-- 头部 -->
+  <header>
+    <h1>📚 实验报告批改系统</h1>
+    <p class="subtitle">上传学生实验报告，AI 自动评分、分析、汇总</p>
+  </header>
 
-        <!-- 操作按钮 -->
-        <section class="actions">
-            <a href="{{ url_for('grade') }}" class="btn btn-primary btn-lg">
-                ⚡ 开始批改所有文档
-            </a>
-            <a href="{{ url_for('export') }}" class="btn btn-success">
-                📊 导出 Excel
-            </a>
-            <a href="{{ url_for('export_html') }}" class="btn btn-info">
-                📄 导出 HTML 报告
-            </a>
-            <form action="{{ url_for('clear_all') }}" method="post" style="display:inline;">
-                <button type="submit" class="btn btn-danger" onclick="return confirm('确定要清空所有数据吗？')">
-                    🗑️ 清空数据
-                </button>
-            </form>
-        </section>
+  <!-- Flash 消息 -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="flash {{ category }}">
+          <span>{{ "✅" if category == "success" else "⚠️" if category == "warning" else "❌" }}</span>
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
 
-        <!-- 已上传文档列表 -->
-        <section class="documents card">
-            <h2>📋 待批改文档 ({{ documents|length }})</h2>
-            {% if documents %}
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>文件名</th>
-                            <th>大小</th>
-                            <th>上传时间</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for doc in documents %}
-                        <tr>
-                            <td>{{ doc.filename }}</td>
-                            <td>{{ doc.size }}</td>
-                            <td>{{ doc.modified }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="empty-state">
-                <p>暂无文档，请上传 .docx 实验报告</p>
-            </div>
-            {% endif %}
-        </section>
+  <!-- AI 状态 -->
+  <div class="card" id="apiStatusCard">
+    <div class="card-header">
+      <span class="icon icon-primary">🤖</span>
+      <h2>AI 评分引擎</h2>
+    </div>
+    <div id="apiStatusContent">
+      <p style="color: var(--gray-400); font-size: 14px;">正在检测 AI 服务状态...</p>
+    </div>
+  </div>
 
-        <!-- 历史评分结果 -->
-        {% if results %}
-        <section class="results card">
-            <h2>🏆 最近批改结果</h2>
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>学号</th>
-                            <th>姓名</th>
-                            <th>班级</th>
-                            <th>实验名称</th>
-                            <th>分数</th>
-                            <th>截图</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for r in results %}
-                        <tr>
-                            <td>{{ r.student_id }}</td>
-                            <td>{{ r.name }}</td>
-                            <td>{{ r.class_name }}</td>
-                            <td>{{ r.experiment }}</td>
-                            <td class="score {{ 'high' if r.score >= 90 }}{{ 'mid' if r.score >= 75 and r.score < 90 }}{{ 'low' if r.score < 75 }}">
-                                {{ r.score }}
-                            </td>
-                            <td>{{ r.image_count }} 张</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            <div class="action-bar">
-                <a href="{{ url_for('grade') }}" class="btn btn-primary">查看详细评分</a>
-            </div>
-        </section>
-        {% endif %}
+  <!-- 上传区域 -->
+  <div class="card">
+    <div class="card-header">
+      <span class="icon icon-primary">📤</span>
+      <h2>上传学生作业</h2>
     </div>
 
-    <script>
-    // 检测API状态
-    fetch('/api/api_status')
-        .then(r => r.json())
-        .then(data => {
-            const el = document.getElementById('ollama-status-content');
-            if (data.available) {
-                el.innerHTML = `
-                    <p class="status-online">✅ 智谱AI 已连接</p>
-                    <p>模型: <strong>${data.model}</strong> | 在线视觉评分已就绪</p>
-                `;
-            } else {
-                el.innerHTML = `
-                    <p class="status-offline">⚠️ 未配置智谱API Key — 使用关键词回退评分</p>
-                    <p class="hint">请在环境变量中设置 <code>ZHIPU_API_KEY</code></p>
-                `;
-            }
-        })
-        .catch(() => {
-            document.getElementById('ollama-status-content').innerHTML = `
-                <p class="status-offline">⚠️ 无法检测API状态</p>
-            `;
-        });
-    </script>
+    <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data" id="uploadForm">
+      <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+        <span class="upload-icon" id="uploadIcon">📄</span>
+        <div class="upload-text" id="uploadText">点击选择文件，或将文件拖拽到这里</div>
+        <div class="upload-hint" id="uploadHint">支持 .docx 格式的实验报告，可批量选择</div>
+        <input type="file" id="fileInput" name="files" accept=".docx" multiple
+               onchange="onFileSelected(this)">
+      </div>
+
+      <div class="upload-mode-row">
+        <button type="button" class="upload-mode-btn active" data-mode="files" onclick="switchMode('files')">📄 选择文件</button>
+        <button type="button" class="upload-mode-btn" data-mode="folder" onclick="switchMode('folder')">📁 选择文件夹</button>
+      </div>
+
+      <input type="file" id="folderInput" name="folder" webkitdirectory style="display:none"
+             onchange="onFolderSelected(this)">
+
+      <div class="upload-submit-area">
+        <button type="submit" class="btn btn-primary btn-lg" id="uploadBtn">
+          📤 上传文档
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 操作栏 -->
+  <div class="action-bar">
+    <a href="{{ url_for('grade') }}" class="btn btn-primary btn-lg" onclick="showLoading()">
+      ⚡ 开始批改所有文档
+    </a>
+    <a href="{{ url_for('export') }}" class="btn btn-success">
+      📊 导出 Excel
+    </a>
+    <a href="{{ url_for('export_html') }}" class="btn btn-info">
+      📄 导出 HTML 报告
+    </a>
+    <form action="{{ url_for('clear_all') }}" method="post" style="display:inline;"
+          onsubmit="return confirm('确定要清空所有数据吗？')">
+      <button type="submit" class="btn btn-outline">🗑️ 清空数据</button>
+    </form>
+  </div>
+
+  <!-- 文档列表 -->
+  <div class="card">
+    <div class="card-header">
+      <span class="icon icon-primary">📋</span>
+      <h2>待批改文档 ({{ documents|length }})</h2>
+    </div>
+
+    {% if documents %}
+    <div class="doc-list">
+      {% for doc in documents %}
+      <div class="doc-item">
+        <div class="doc-info">
+          <span class="doc-icon">📄</span>
+          <div>
+            <div class="doc-name">{{ doc.filename }}</div>
+            <div class="doc-meta">上传时间：{{ doc.modified }}</div>
+          </div>
+        </div>
+        <span class="doc-size">{{ doc.size }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <span class="empty-icon">📭</span>
+      <p>暂无待批改文档</p>
+      <p style="font-size: 13px; color: var(--gray-400);">请先上传学生的实验报告（.docx 格式）</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- 历史评分结果 -->
+  {% if results %}
+  <div class="card">
+    <div class="card-header">
+      <span class="icon icon-success">🏆</span>
+      <h2>最近批改结果</h2>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>学号</th>
+            <th>姓名</th>
+            <th>班级</th>
+            <th>实验名称</th>
+            <th>分数</th>
+            <th>截图</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in results %}
+          <tr>
+            <td>{{ r.student_id }}</td>
+            <td><strong>{{ r.name }}</strong></td>
+            <td>{{ r.class_name }}</td>
+            <td>{{ r.experiment }}</td>
+            <td>
+              <span class="stat-value
+                {{ 'high' if r.score >= 90 }}{{ 'mid' if r.score >= 75 and r.score < 90 }}{{ 'low' if r.score < 75 }}"
+                style="font-size: 18px;">
+                {{ r.score }}
+              </span>
+            </td>
+            <td>{{ r.image_count }} 张</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top: 16px;">
+      <a href="{{ url_for('grade') }}" class="btn btn-primary" onclick="showLoading()">查看详细评分</a>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+// ===== 模式切换 =====
+function switchMode(mode) {
+  document.querySelectorAll('.upload-mode-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
+  document.getElementById('fileInput').style.display = mode === 'files' ? 'none' : 'none';
+  document.getElementById('folderInput').style.display = 'none';
+
+  const area = document.getElementById('uploadArea');
+  const icon = document.getElementById('uploadIcon');
+  const text = document.getElementById('uploadText');
+  const hint = document.getElementById('uploadHint');
+
+  if (mode === 'folder') {
+    document.getElementById('folderInput').style.display = 'none';
+    document.getElementById('folderInput').click();
+  } else {
+    document.getElementById('fileInput').click();
+  }
+}
+
+function onFileSelected(input) {
+  const count = input.files.length;
+  if (count > 0) {
+    document.getElementById('uploadIcon').textContent = '✅';
+    document.getElementById('uploadText').textContent = `已选择 ${count} 个文件`;
+    document.getElementById('uploadHint').textContent = [...input.files].map(f => f.name).join('、').substring(0, 80) + (count > 3 ? '...' : '');
+  }
+}
+
+function onFolderSelected(input) {
+  // 将文件夹内的文件传给表单的 files 字段
+  if (input.files.length > 0) {
+    document.getElementById('uploadIcon').textContent = '✅';
+    document.getElementById('uploadText').textContent = `已选择文件夹，共 ${input.files.length} 个文件`;
+    document.getElementById('uploadHint').textContent = `将自动筛选 .docx 格式文件`;
+  }
+}
+
+// 表单提交：文件夹模式特殊处理
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+  const folderInput = document.getElementById('folderInput');
+  if (folderInput.files.length > 0) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    formData.delete('files');
+    formData.delete('folder');
+    for (const f of folderInput.files) {
+      formData.append('files', f, f.webkitRelativePath || f.name);
+    }
+    fetch('{{ url_for("upload") }}', {
+      method: 'POST', body: formData
+    }).then(r => {
+      if (r.redirected) window.location.href = r.url;
+      else window.location.reload();
+    });
+  }
+});
+
+// ===== 拖拽上传 =====
+const area = document.getElementById('uploadArea');
+area.addEventListener('dragover', e => { e.preventDefault(); area.classList.add('drag-over'); });
+area.addEventListener('dragleave', () => area.classList.remove('drag-over'));
+area.addEventListener('drop', e => {
+  e.preventDefault();
+  area.classList.remove('drag-over');
+  const files = e.dataTransfer.files;
+  if (files.length > 0) {
+    document.getElementById('fileInput').files = files;
+    onFileSelected(document.getElementById('fileInput'));
+  }
+});
+
+// ===== 加载动画 =====
+function showLoading() {
+  document.getElementById('loadingOverlay').classList.add('active');
+}
+
+// ===== API 状态检测 =====
+fetch('/api/api_status')
+  .then(r => r.json())
+  .then(data => {
+    const el = document.getElementById('apiStatusContent');
+    if (data.available) {
+      el.innerHTML = `
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <span style="display:inline-flex; align-items:center; gap:6px; padding:6px 14px; background:var(--success-bg); color:#166534; border-radius:20px; font-size:13px; font-weight:500;">
+            ✅ 已连接
+          </span>
+          <span style="font-size:13px; color:var(--gray-500);">
+            模型：<strong>${data.model}</strong>
+          </span>
+          <span style="font-size:13px; color:var(--gray-500);">
+            提供商：智谱AI（在线评分）
+          </span>
+        </div>
+      `;
+    } else {
+      el.innerHTML = `
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <span style="display:inline-flex; align-items:center; gap:6px; padding:6px 14px; background:var(--warning-bg); color:#92400e; border-radius:20px; font-size:13px; font-weight:500;">
+            ⚠️ 未连接
+          </span>
+          <span style="font-size:13px; color:var(--gray-400);">
+            使用关键词回退评分（功能受限）
+          </span>
+        </div>
+      `;
+    }
+  })
+  .catch(() => {
+    document.getElementById('apiStatusContent').innerHTML = `<p style="color:var(--gray-400);">无法检测服务状态</p>`;
+  });
+</script>
+
 </body>
 </html>

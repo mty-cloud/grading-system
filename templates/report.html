@@ -1,92 +1,169 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <title>作业批改报告</title>
-    <style>
-        body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; color: #333; background: #f5f5f5; }
-        .report-header { background: #2c3e50; color: white; padding: 30px; border-radius: 12px; margin-bottom: 30px; }
-        .report-header h1 { margin: 0; font-size: 24px; }
-        .report-header p { margin: 8px 0 0; opacity: 0.8; font-size: 14px; }
-        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-        th { background: #3498db; color: white; padding: 12px 15px; text-align: left; font-size: 14px; }
-        td { padding: 10px 15px; border-bottom: 1px solid #eee; font-size: 13px; }
-        tr:hover { background: #f8f9fa; }
-        .score { font-weight: bold; font-size: 16px; }
-        .score-high { color: #27ae60; }
-        .score-mid { color: #f39c12; }
-        .score-low { color: #e74c3c; }
-        .score-fail { color: #c0392b; }
-        .summary { display: flex; gap: 20px; margin: 20px 0; flex-wrap: wrap; }
-        .summary-item { background: white; padding: 20px; border-radius: 8px; flex: 1; min-width: 140px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }
-        .summary-item .num { font-size: 28px; font-weight: bold; display: block; }
-        .summary-item .label { font-size: 12px; color: #888; margin-top: 4px; }
-        .footer { text-align: center; margin-top: 30px; color: #999; font-size: 12px; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>作业批改报告</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #f0f4ff;
+      color: #1e293b;
+      padding: 40px 20px;
+      line-height: 1.6;
+    }
+    .container { max-width: 900px; margin: 0 auto; }
+
+    .report-header {
+      background: linear-gradient(135deg, #2c3e50, #1a1a2e);
+      color: white;
+      padding: 36px 40px;
+      border-radius: 16px;
+      margin-bottom: 28px;
+    }
+    .report-header h1 { font-size: 24px; margin-bottom: 8px; }
+    .report-header p { opacity: .7; font-size: 14px; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .summary-item {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      text-align: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+      border: 1px solid #e2e8f0;
+    }
+    .summary-item .num { font-size: 28px; font-weight: 700; display: block; }
+    .summary-item .label { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+      border: 1px solid #e2e8f0;
+    }
+    th {
+      background: #f1f5f9;
+      padding: 12px 16px;
+      text-align: left;
+      font-size: 13px;
+      font-weight: 600;
+      color: #475569;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 13px;
+    }
+    tr:hover td { background: #f8faff; }
+    .score { font-weight: 700; font-size: 16px; }
+    .s-high { color: #22c55e; }
+    .s-mid { color: #f59e0b; }
+    .s-low { color: #ef4444; }
+
+    .footer {
+      text-align: center;
+      margin-top: 28px;
+      color: #94a3b8;
+      font-size: 12px;
+    }
+
+    @media print {
+      body { background: white; padding: 0; }
+      .report-header { border-radius: 0; }
+      .summary-grid { break-inside: avoid; }
+    }
+    @media (max-width: 600px) {
+      .summary-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
 </head>
 <body>
-    <div class="report-header">
-        <h1>📚 作业批改报告</h1>
-        <p>生成时间：{{ now.strftime('%Y-%m-%d %H:%M:%S') }}</p>
-        <p>批改文档数：{{ results|length }} 份</p>
-    </div>
+<div class="container">
 
-    <div class="summary">
-        <div class="summary-item">
-            <span class="num">{{ results|length }}</span>
-            <span class="label">总文档数</span>
-        </div>
-        <div class="summary-item">
-            <span class="num">{{ "%.1f"|format(results|map(attribute='score')|sum / results|length) if results else 0 }}</span>
-            <span class="label">平均分</span>
-        </div>
-        <div class="summary-item">
-            <span class="num" style="color:#27ae60;">{{ results|map(attribute='score')|max if results else 0 }}</span>
-            <span class="label">最高分</span>
-        </div>
-        <div class="summary-item">
-            <span class="num" style="color:#e74c3c;">{{ results|map(attribute='score')|min if results else 0 }}</span>
-            <span class="label">最低分</span>
-        </div>
-    </div>
+  <div class="report-header">
+    <h1>📚 作业批改报告</h1>
+    <p>生成时间：{{ now.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+    <p>共批改 {{ results|length }} 份文档</p>
+  </div>
 
-    <table>
-        <thead>
-            <tr>
-                <th>序号</th>
-                <th>学号</th>
-                <th>姓名</th>
-                <th>班级</th>
-                <th>分数</th>
-                <th>截图</th>
-                <th>评语</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for r in results %}
-            <tr>
-                <td>{{ loop.index }}</td>
-                <td>{{ r.student_id }}</td>
-                <td>{{ r.name }}</td>
-                <td>{{ r.class_name }}</td>
-                <td>
-                    <span class="score
-                        {% if r.score >= 90 %}score-high
-                        {% elif r.score >= 75 %}score-mid
-                        {% elif r.score >= 60 %}score-low
-                        {% else %}score-fail{% endif %}">
-                        {{ r.score }}
-                    </span>
-                </td>
-                <td>{{ r.image_count }} 张</td>
-                <td>{{ r.comment }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-
-    <div class="footer">
-        <p>由作业批改系统自动生成 | Powered by Flask</p>
+  {% if results %}
+  <div class="summary-grid">
+    <div class="summary-item">
+      <span class="num">{{ results|length }}</span>
+      <span class="label">总文档数</span>
     </div>
+    <div class="summary-item">
+      <span class="num" style="color:#22c55e;">{{ "%d"|format(results|map(attribute='score')|sum / results|length) }}</span>
+      <span class="label">平均分</span>
+    </div>
+    <div class="summary-item">
+      <span class="num" style="color:#22c55e;">{{ results|map(attribute='score')|max }}</span>
+      <span class="label">最高分</span>
+    </div>
+    <div class="summary-item">
+      <span class="num" style="color:#ef4444;">{{ results|map(attribute='score')|min }}</span>
+      <span class="label">最低分</span>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>学号</th>
+        <th>姓名</th>
+        <th>班级</th>
+        <th>实验名称</th>
+        <th>分数</th>
+        <th>截图</th>
+        <th>评语</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in results %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ r.student_id }}</td>
+        <td><strong>{{ r.name }}</strong></td>
+        <td>{{ r.class_name }}</td>
+        <td>{{ r.experiment }}</td>
+        <td>
+          <span class="score {{ 's-high' if r.score>=90 else 's-mid' if r.score>=75 else 's-low' }}">
+            {{ r.score }}
+          </span>
+        </td>
+        <td>{{ r.image_count }} 张</td>
+        <td style="max-width:200px;font-size:12px;color:#64748b;">
+          {{ r.comment.split('；')[0] }}
+          {% if r.comment.split('；')|length > 1 %}
+          <br><span style="color:#94a3b8;">……</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div style="text-align:center;padding:60px 20px;color:#94a3b8;">
+    <p style="font-size:16px;">暂无评分数据</p>
+  </div>
+  {% endif %}
+
+  <div class="footer">
+    <p>由作业批改系统自动生成 · 智谱AI GLM-4V-Flash 视觉评分</p>
+  </div>
+
+</div>
 </body>
 </html>
