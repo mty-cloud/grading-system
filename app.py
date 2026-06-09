@@ -81,49 +81,59 @@ os.makedirs(REPORTS_FOLDER, exist_ok=True)
 ZHIPU_BASE_URL = "https://open.bigmodel.cn/api/paas/v4/"
 
 def build_grading_prompt(text):
-    """构建综合评分提示词（包含文字+图片分析）"""
-    # 截取关键文本
-    text_excerpt = text[:3000] if text else "(无文字内容)"
+    prompt = f"""你是一个严格的大学实验报告评分助手。请分析截图和文字内容。
 
-    prompt = f"""你是一个严格的大学实验报告评分助手。请独立分析截图和文字内容，客观评分。
-
-## 实验背景
-Hadoop集群部署实验，涉及HDFS、YARN的安装、配置和启动验证。
-
-## 学生文字内容（判断完整度、深度、是否重复）
+## 学生文字内容
 ```
-{text_excerpt}
+{text[:3000]}
 ```
 
-## 评分标准（满分100分，请严格区分档次，不要集中在75-89）
+## 第一步：定等级（必须从下面5个等级中选择1个）
+A级 - 优秀(90-95分): 操作完全正确，截图清晰完整，文字充实有深度
+B级 - 良好(75-84分): 操作基本正确，截图完整，文字完整无硬伤
+C级 - 中等(65-74分): 操作有缺陷或报错，截图不完整，文字有重复
+D级 - 及格(50-64分): 明显缺陷，截图缺失或质量差，文字敷衍
+E级 - 差(0-49分): 严重缺失，几乎无截图，内容空洞
 
-### A. 截图质量 (0-50分)
-- 有清晰且正确的操作截图（命令执行、进程状态等）: 40-50分
-- 有截图但质量一般（模糊、不完整、相关性差）: 20-35分
-- 截图极少或与实验无关: 5-15分
-- 无截图: 0分
+## 第二步：在等级区间内精确打分。A级需很优秀才能得90+
 
-### B. 文字内容完整度 (0-30分)
-- 目的+步骤+总结齐全，内容充实，有深度: 25-30分
-- 包含大部分要素但比较简略: 15-24分
-- 内容残缺、混乱或极其简略: 5-14分
-- 几乎无内容: 0-4分
-
-### C. 技术细节与代码 (0-20分)
-- 包含具体命令、配置文件内容、关键参数，描述准确: 15-20分
-- 提到技术点但没有具体细节: 8-14分
-- 几乎没有技术描述: 0-7分
-
-## 关键扣分项
-- 文字大量重复：总分直接扣15-25分
-- 总结明显敷衍（仅一两句套话）：扣10-15分
-- 没有总结：扣15分
-- 无截图：总分不超过30分
-- 截图不足：每少一张关键截图扣5-10分
+## 扣分硬规则
+- 截图少于2张：降一级
+- 文字少于500字：降一级
+- 完全没有实验总结：总分最高70
+- 内容大量重复：降一级
 
 ## 输出要求
-只输出纯JSON，不要markdown代码块：
-{{"image_score":<0-50>,"text_score":<0-30>,"tech_score":<0-20>,"total_score":<0-100>,"analysis":"优缺点概括","text_feedback":"文字评价","image_feedback":"截图评价"}}"""
+纯JSON：
+{{"grade":"A/B/C/D/E","image_score":<0-50>,"text_score":<0-30>,"tech_score":<0-20>,"total_score":<0-100>,"analysis":"概括","text_feedback":"文字评价","image_feedback":"截图评价"}}"""
+    return prompt
+
+
+def build_text_only_prompt(text):
+    prompt = f"""你是严格的大学实验报告评分助手。以下报告没有提交截图。
+
+## 学生文字内容
+```
+{text[:4000]}
+```
+
+## 定等级
+A级(85-90): 目的+步骤+总结齐全，内容充实有深度，技术细节丰富
+B级(70-79): 基本完整，有一定深度
+C级(60-69): 包含主要要素但简略或有重复
+D级(40-59): 内容残缺或极其简略
+E级(0-39): 几乎无内容
+
+## 硬扣分规则
+- 无截图：总分上限75
+- 文字<300字：总分上限30
+- 文字300-500字：总分上限50
+- 无总结：总分上限60
+- 大量重复：总分上限50
+
+## 输出要求
+纯JSON：
+{{"grade":"A/B/C/D/E","content_score":<0-30>,"tech_score":<0-25>,"summary_score":<0-25>,"format_score":<0-20>,"total_score":<0-100>,"analysis":"概括","text_feedback":"具体评价"}}"""
     return prompt
 
 
@@ -344,6 +354,68 @@ def ai_grade_text_only(text):
         return auto_grade_fallback(text, [])
 
 
+def calibrate_score(score, text, images):
+    '''AI评分后硬性校准，强制拉开区分度'''
+    import re
+    deductions = []
+    
+    # 截图数量惩罚
+    img_count = len(images)
+    if img_count == 0:
+        score = min(score, 30)
+        deductions.append("无截图: 上限30分")
+    elif img_count == 1:
+        score -= 15
+        deductions.append("仅1张截图: -15分")
+    elif img_count == 2:
+        score -= 8
+        deductions.append("仅2张截图: -8分")
+    elif img_count >= 4:
+        score += 5
+        deductions.append("截图充足(>=4张): +5分")
+    
+    # 内容长度惩罚
+    text_len = len(text)
+    if text_len < 300:
+        score = min(score, 35)
+        deductions.append("文字过短(<300字): 上限35分")
+    elif text_len < 500:
+        score = min(score, 55)
+        deductions.append("文字偏短(<500字): 上限55分")
+    elif text_len < 800:
+        score -= 5
+        deductions.append("文字略少(<800字): -5分")
+    elif text_len > 2000:
+        score += 3
+        deductions.append("内容充实(>2000字): +3分")
+    
+    # 实验总结检查
+    if not re.search(r'实验总结|实验心得|实验小结|心得体会', text):
+        score -= 10
+        deductions.append("缺少实验总结: -10分")
+    
+    # 遇到问题检查
+    if not re.search(r'遇到的问题|问题及解决|错误|报错|故障|问题', text):
+        score -= 5
+        deductions.append("未记录遇到的问题: -5分")
+    
+    # 命令/代码检查
+    if not re.search(r'start-dfs|start-yarn|jps|hadoop|hive|ssh|命令|配置', text):
+        score -= 5
+        deductions.append("缺少关键命令/代码: -5分")
+    
+    # 重复内容检查
+    paragraphs = [p.strip() for p in text.split('\n') if len(p.strip()) > 20]
+    if len(paragraphs) > 3:
+        unique = set(paragraphs)
+        if len(unique) < len(paragraphs) * 0.6:
+            score -= 15
+            deductions.append("内容大量重复: -15分")
+    
+    score = max(0, min(100, round(score)))
+    return score, deductions
+
+
 def ai_grade_with_zhipu(text, images):
     """
     使用智谱AI视觉模型进行图片+文字综合评分
@@ -415,6 +487,13 @@ def ai_grade_with_zhipu(text, images):
         image_score_avg = sum(f.get("image_score", 0) for f in all_findings) / len(all_findings)
         tech_score_avg = sum(f.get("tech_score", 0) for f in all_findings) / len(all_findings)
 
+    # 硬性校准 - 强制拉开区分度
+    deductions = []
+    old_score = final_score
+    final_score, deductions = calibrate_score(final_score, text, images)
+    if deductions:
+        print(f"  🔧 校准: {old_score} -> {final_score} ({'; '.join(deductions)})")
+
     comments = []
     if final_score >= 90:
         comments.append("🎉 实验完成度极高！")
@@ -425,7 +504,7 @@ def ai_grade_with_zhipu(text, images):
     else:
         comments.append("❌ 实验存在明显问题，需要完善。")
 
-    comments.append(f"截图 {image_score_avg:.0f}/50 分 + 内容 {text_score_avg:.0f}/30 分 + 技术 {tech_score_avg:.0f}/20 分 = {final_score} 分")
+    comments.append(f"截图 {image_score_avg:.0f}/50 + 内容 {text_score_avg:.0f}/30 + 技术 {tech_score_avg:.0f}/20 = {old_score} 分(校准后{final_score}分)")
 
     if text_feedbacks:
         seen = set()
