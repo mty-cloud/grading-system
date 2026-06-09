@@ -85,57 +85,45 @@ def build_grading_prompt(text):
     # 截取关键文本
     text_excerpt = text[:3000] if text else "(无文字内容)"
 
-    # 提取文本特征辅助AI判断
-    has_summary = bool(re.search(r'实验总结|实验心得|实验小结', text))
-    has_problems = bool(re.search(r'遇到的问题|问题及解决|错误|报错|故障', text))
-    has_code = bool(re.search(r'start-dfs|start-yarn|jps|hadoop', text))
-    has_steps = bool(re.search(r'实验步骤|操作步骤|实验原理', text))
-    has_purpose = bool(re.search(r'实验目的|实验目标', text))
-    text_len = len(text)
-
-    hint_summary = "包含实验总结" if has_summary else "缺少实验总结"
-    hint_problems = "记录了遇到的问题" if has_problems else "未记录遇到的问题"
-    hint_code = "包含关键命令/代码" if has_code else "缺少关键命令/代码"
-    hint_length = f"内容篇幅{'充足' if text_len > 1000 else '一般' if text_len > 500 else '偏少'}"
-
-    prompt = f"""你是一个严格的实验报告评分助手。请结合以下实验报告的【文字内容】和【截图】进行综合评分。
+    prompt = f"""你是一个严格的大学实验报告评分助手。请独立分析截图和文字内容，客观评分。
 
 ## 实验背景
-这是一次数仓环境搭建的实验报告，涉及Hadoop集群部署(HDFS/YARN)。
+Hadoop集群部署实验，涉及HDFS、YARN的安装、配置和启动验证。
 
-## 学生实验报告的文字内容片段
+## 学生文字内容（判断完整度、深度、是否重复）
 ```
 {text_excerpt}
 ```
 
-## 文字内容特征
-- {hint_summary}
-- {hint_problems}
-- {hint_code}
-- {hint_length}
+## 评分标准（满分100分，请严格区分档次，不要集中在75-89）
 
-## 综合评分标准（满分100分）
+### A. 截图质量 (0-50分)
+- 有清晰且正确的操作截图（命令执行、进程状态等）: 40-50分
+- 有截图但质量一般（模糊、不完整、相关性差）: 20-35分
+- 截图极少或与实验无关: 5-15分
+- 无截图: 0分
 
-### 截图评分维度 (0-60分)
-1. 操作成功度(0-20分): 命令是否成功执行?进程是否正常运行?
-2. 界面完整性(0-20分): Web界面(HDFS:9870/YARN:8088)是否完整加载?
-3. 错误与异常(0-20分): 是否有明显报错或异常?
+### B. 文字内容完整度 (0-30分)
+- 目的+步骤+总结齐全，内容充实，有深度: 25-30分
+- 包含大部分要素但比较简略: 15-24分
+- 内容残缺、混乱或极其简略: 5-14分
+- 几乎无内容: 0-4分
 
-### 文字内容评分维度 (0-40分)
-4. 内容完整性(0-15分): 实验目的、操作步骤、实验总结是否齐全且充实?
-5. 总结反思(0-15分): 实验总结是否有深度?问题分析是否到位?有没有敷衍?
-6. 技术细节(0-10分): 是否包含具体命令、配置或代码片段?
+### C. 技术细节与代码 (0-20分)
+- 包含具体命令、配置文件内容、关键参数，描述准确: 15-20分
+- 提到技术点但没有具体细节: 8-14分
+- 几乎没有技术描述: 0-7分
 
-## 扣分提示
-- 文字内容大量重复：总分扣10-15分
-- 实验总结缺失或过于敷衍：文字部分总分不超过20分
-- 内容简略（<300字）：文字部分总分不超过15分
-- 截图数量不足3张：每少1张扣5分（最高扣10分）
+## 关键扣分项
+- 文字大量重复：总分直接扣15-25分
+- 总结明显敷衍（仅一两句套话）：扣10-15分
+- 没有总结：扣15分
+- 无截图：总分不超过30分
+- 截图不足：每少一张关键截图扣5-10分
 
 ## 输出要求
-请严格输出纯JSON，不要包含markdown代码块标记和其他内容。输出格式:
-{{"image_score":<0-60>,"text_score":<0-40>,"total_score":<0-100>,"analysis":"综合评语(一句话概括)","text_feedback":"对文字内容的具体评价(包含优点和不足)","image_feedback":"对截图内容的具体评价(包含优点和不足)"}}"""
-
+只输出纯JSON，不要markdown代码块：
+{{"image_score":<0-50>,"text_score":<0-30>,"tech_score":<0-20>,"total_score":<0-100>,"analysis":"优缺点概括","text_feedback":"文字评价","image_feedback":"截图评价"}}"""
     return prompt
 
 
@@ -230,16 +218,12 @@ def analyze_image_with_zhipu(image_path, text):
 
 
 def build_text_only_prompt(text):
-    """构建纯文字评分提示词（无截图时使用）"""
+    """构建纯文字评分提示词（无截图时使用，严格压低分数）"""
     text_excerpt = text[:4000] if text else "(无文字内容)"
-    text_len = len(text)
 
-    prompt = f"""你是一个严格的实验报告评分助手。以下是学生提交的实验报告文字内容（没有截图），请独立评分。
+    prompt = f"""你是一个严格的大学实验报告评分助手。以下实验报告完全没有提交截图，请根据纯文字内容评分。
 
-## 实验背景
-这是一次数仓环境搭建的实验报告，涉及Hadoop集群部署(HDFS/YARN)。
-
-## 学生实验报告的文字内容
+## 学生文字内容
 ```
 {text_excerpt}
 ```
@@ -247,45 +231,35 @@ def build_text_only_prompt(text):
 ## 评分标准（满分100分）
 
 ### 内容完整性 (0-30分)
-- 是否包含实验目的、操作步骤、实验总结？
-- 内容充实度如何？篇幅是否充足？
-- 30分：结构完整，目的/步骤/总结齐全，内容充实
-- 15-25分：包含大部分要素但不够完整
-- 0-10分：内容残缺或过于简略
+- 结构完整，目的/步骤/总结齐全，内容充实: 25-30分
+- 包含大部分要素但不够完整: 15-24分
+- 内容残缺或过于简略: 0-14分
 
 ### 技术深度 (0-25分)
-- 是否包含关键命令、配置细节、代码？
-- 技术描述是否有深度？
-- 25分：有具体命令、配置、代码片段，技术细节丰富
-- 10-20分：有技术描述但不够具体
-- 0-5分：几乎没有技术内容
+- 有具体命令、配置、代码片段: 20-25分
+- 有技术描述但不够具体: 10-19分
+- 几乎没有技术内容: 0-9分
 
 ### 总结反思 (0-25分)
-- 是否有实验总结或心得？
-- 是否记录了遇到的问题及解决方案？
-- 25分：总结有深度，问题分析到位，有解决方案
-- 10-20分：有总结但比较表面
-- 0-5分：没有总结或总结敷衍
+- 总结有深度，问题分析到位，有解决方案: 20-25分
+- 有总结但比较表面: 10-19分
+- 没有总结或只有套话: 0-9分
 
 ### 格式与规范 (0-20分)
-- 是否有大量重复内容？
-- 排版是否规范？
-- 20分：内容精炼，无重复，排版规范
-- 10-15分：少量重复，基本规范
-- 0-5分：大量重复内容或排版混乱
+- 内容精炼，无重复，排版规范: 15-20分
+- 少量重复，基本规范: 8-14分
+- 大量重复内容或排版混乱: 0-7分
 
-## 扣分项
-- 文字过于简短（<300字）：总分不得超过40分
-- 完全没有总结：总分不得超过70分
-- 内容大部分是重复的：总分不得超过50分
-
-## 关于截图的说明
-这份实验报告没有提交任何截图。根据实验要求，缺少截图将被视为实验完成度不足，请在评分中充分考虑这一点，适当扣分。
+## 严格扣分规则
+- 文字<300字：总分上限35分
+- 文字300-500字：总分上限50分
+- 完全没有实验总结：总分上限60分
+- 内容大量重复（占全文30%以上）：总分上限45分
+- 没有提交任何截图：直接扣15分，且总分上限70分
 
 ## 输出要求
-请严格输出纯JSON，不要包含markdown代码块标记和其他内容。
-{{"content_score":<0-30>,"tech_score":<0-25>,"summary_score":<0-25>,"format_score":<0-20>,"total_score":<0-100>,"analysis":"综合评语","text_feedback":"对文字的具体评价(包括优点和不足)","key_findings":["发现1","发现2"]}}"""
-
+纯JSON格式：
+{{"content_score":<0-30>,"tech_score":<0-25>,"summary_score":<0-25>,"format_score":<0-20>,"total_score":<0-100>,"analysis":"优缺点概括","text_feedback":"具体评价"}}"""
     return prompt
 
 
@@ -416,6 +390,7 @@ def ai_grade_with_zhipu(text, images):
             "score": score,
             "image_score": result.get("image_score", 0),
             "text_score": result.get("text_score", 0),
+            "tech_score": result.get("tech_score", 0),
             "analysis": result.get("analysis", ""),
             "text_feedback": text_fb,
             "image_feedback": image_fb,
@@ -434,9 +409,11 @@ def ai_grade_with_zhipu(text, images):
     # 计算平均分项
     text_score_avg = 0
     image_score_avg = 0
+    tech_score_avg = 0
     if all_findings:
         text_score_avg = sum(f.get("text_score", 0) for f in all_findings) / len(all_findings)
         image_score_avg = sum(f.get("image_score", 0) for f in all_findings) / len(all_findings)
+        tech_score_avg = sum(f.get("tech_score", 0) for f in all_findings) / len(all_findings)
 
     comments = []
     if final_score >= 90:
@@ -448,7 +425,7 @@ def ai_grade_with_zhipu(text, images):
     else:
         comments.append("❌ 实验存在明显问题，需要完善。")
 
-    comments.append(f"截图评分 {image_score_avg:.0f}/60 分，文字评分 {text_score_avg:.0f}/40 分")
+    comments.append(f"截图 {image_score_avg:.0f}/50 分 + 内容 {text_score_avg:.0f}/30 分 + 技术 {tech_score_avg:.0f}/20 分 = {final_score} 分")
 
     if text_feedbacks:
         seen = set()
