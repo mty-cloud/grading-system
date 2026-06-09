@@ -25,12 +25,12 @@ jobs:
           pip install pyinstaller
 
       - name: 构建 exe
+        shell: cmd
         run: |
           pyinstaller --clean --onefile ^
             --add-data "templates;templates" ^
             --add-data "static;static" ^
             --hidden-import openpyxl ^
-            --hidden-import openpyxl.cell._writer ^
             --hidden-import docx ^
             --hidden-import docx.opc ^
             --hidden-import requests ^
@@ -42,11 +42,6 @@ jobs:
             --hidden-import click ^
             --hidden-import blinker ^
             --hidden-import urllib3 ^
-            --exclude-module tkinter ^
-            --exclude-module PIL ^
-            --exclude-module matplotlib ^
-            --exclude-module numpy ^
-            --exclude-module pandas ^
             --console ^
             --name "作业批改系统" ^
             app.py
