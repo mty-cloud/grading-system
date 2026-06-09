@@ -99,6 +99,18 @@ def build_grading_prompt(text):
 
 ## 输出JSON格式
 {{"image_score":0-50,"text_score":0-30,"tech_score":0-20,"total_score":0-100,"analysis":"一句话评价","text_feedback":"文字评价","image_feedback":"截图评价"}}"""
+
+
+def is_zhipu_available():
+    return bool(ZHIPU_API_KEY)
+
+
+def get_available_vision_models():
+    if ZHIPU_API_KEY:
+        return [ZHIPU_MODEL]
+    return []
+
+
 def build_text_only_prompt(text):
     """无截图评分 - 让AI自主判断"""
     excerpt = text[:4000] if text else "(无)"
