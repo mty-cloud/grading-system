@@ -25,32 +25,25 @@ def resource_path(relative_path):
         base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
 
-# ===== API Key 配置（优先级：.env 文件 > 代码内置默认值） =====
+# ===== API Key 配置（已内置，开箱即用） =====
 ZHIPU_API_KEY = "ae0c33227c2542659ae03872244959cb.hcjuR7slRxiPPROU"
 ZHIPU_MODEL = "glm-4v-flash"
 
-# 依次查找 .env：exe同目录 → 开发目录 → 打包内部
-_env_candidates = []
-try:
-    _env_candidates.append(os.path.join(os.path.dirname(sys.executable), '.env'))
-except Exception:
-    pass
-_env_candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
-_env_candidates.append(resource_path('.env'))
-
-for _env_path in _env_candidates:
-    if os.path.exists(_env_path):
+# 检查 exe 同目录是否有 .env（仅用于覆盖默认值）
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+if os.path.exists(_env_path):
+    try:
         with open(_env_path, 'r', encoding='utf-8') as _f:
             for _line in _f:
                 _line = _line.strip()
-                if _line and not _line.startswith('#'):
-                    if '=' in _line:
-                        _k, _v = _line.split('=', 1)
-                        if _k.strip() == 'ZHIPU_API_KEY':
-                            ZHIPU_API_KEY = _v.strip()
-                        elif _k.strip() == 'ZHIPU_MODEL':
-                            ZHIPU_MODEL = _v.strip()
-        break
+                if _line and not _line.startswith('#') and '=' in _line:
+                    _k, _v = _line.split('=', 1)
+                    if _k.strip() == 'ZHIPU_API_KEY':
+                        ZHIPU_API_KEY = _v.strip()
+                    elif _k.strip() == 'ZHIPU_MODEL':
+                        ZHIPU_MODEL = _v.strip()
+    except Exception:
+        pass
 # ==============================
 
 import requests
