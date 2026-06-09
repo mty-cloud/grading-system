@@ -604,15 +604,15 @@ def auto_grade_fallback(text, images):
 
 # ========== 文档解析模块 ==========
 
-def extract_student_info(doc):
-    """从Word文档中提取学生信息"""
+def extract_student_info(doc, filename=""):
+    """从Word文档中提取学生信息（支持多种文档格式）"""
     text = ""
     for para in doc.paragraphs:
         text += para.text + "\n"
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
-                text += cell.text + " "
+                text += cell.text.strip() + " "
 
     info = {
         "student_id": "",
@@ -622,11 +622,12 @@ def extract_student_info(doc):
         "experiment": "",
     }
 
-    # 学号
+    # 学号：多种格式
     id_patterns = [
-        r'学\s*号[：:\s]*(\d{10,12})',
-        r'学\s*号\s*(\d{10,12})',
-        r'学号[：:\s]*(\d{10,12})',
+        r'学\s*号[：:\s/]*\s*_*(\d{10,12})',           # 学号：2024... / 学号____2024...
+        r'学\s*号[：:\s]*(\d{10,12})',                    # 学号：2024...
+        r'学号/班级[：:\s]*_*(\d{10,12})',                # 学号/班级：____2024...
+        r'学号[：:\s]*_*(\d{10,12})',                      # 学号：____2024...
     ]
     for p in id_patterns:
         m = re.search(p, text)
@@ -634,11 +635,18 @@ def extract_student_info(doc):
             info["student_id"] = m.group(1).strip()
             break
 
-    # 姓名
+    # 如果文档内没找到，从文件名提取（文件名常有学号）
+    if not info["student_id"] and filename:
+        file_match = re.search(r'(\d{10,12})', filename)
+        if file_match:
+            info["student_id"] = file_match.group(1)
+
+    # 姓名：多种格式
     name_patterns = [
-        r'姓\s*名[：:\s]+([一-龥]{2,4})',
-        r'姓\s*名\s+([一-龥]{2,4})',
-        r'姓名[：:\s]*([一-龥]{2,4})',
+        r'姓\s*名[：:\s]*_*([一-龥]{2,4})_*',             # 姓名：张三____
+        r'姓\s*名\s+([一-龥]{2,4})',                       # 姓   名   张三
+        r'实验人[：:\s]*_*([一-龥]{2,4})_*',               # 实验人：____张三____
+        r'姓名[：:\s]*([一-龥]{2,4})',                      # 姓名：张三
     ]
     for p in name_patterns:
         m = re.search(p, text)
@@ -646,10 +654,18 @@ def extract_student_info(doc):
             info["name"] = m.group(1).strip()
             break
 
-    # 班级
+    # 也从文件名提取姓名（文件名常有姓名）
+    if not info["name"] and filename:
+        # 文件名在学号后面的可能是姓名，如 "20233822012胡小虎xxx.docx"
+        name_in_file = re.search(r'\d{10,12}([一-龥]{2,4})', filename)
+        if name_in_file:
+            info["name"] = name_in_file.group(1)
+
+    # 班级：多种格式
     class_patterns = [
-        r'班\s*级[：:\s]+([^\s]{2,10})',
-        r'班级[：:\s]*([^\s]{2,10})',
+        r'学号/班级[：:\s]*_*\d{10,12}_*[/_]*([^\s_]{3,10})',   # 学号/班级：____2024.../23物联网
+        r'班\s*级[：:\s]*_*([^\s]{2,10})',
+        r'班级[：:\s]*_*([^\s_]{2,10})',
     ]
     for p in class_patterns:
         m = re.search(p, text)
@@ -668,8 +684,15 @@ def extract_student_info(doc):
             info["course"] = m.group(1).strip()
             break
 
-    # 实验名称
+    # 实验名称（优先文档标题，再搜标签）
+    first_para = ""
+    for para in doc.paragraphs:
+        if para.text.strip():
+            first_para = para.text.strip()
+            break
+
     exp_patterns = [
+        r'实验[一二三四五六七八九十]+[：:]\s*(.+?)(?:\n|$)',
         r'实验名称[：:\s]+([^\s]{2,30})',
         r'实验[：:\s]*([^\s]{2,30})',
     ]
@@ -678,6 +701,10 @@ def extract_student_info(doc):
         if m:
             info["experiment"] = m.group(1).strip()
             break
+
+    # 如果正则没找到，用文档第一段标题作为实验名称
+    if not info["experiment"] and first_para and len(first_para) > 4:
+        info["experiment"] = first_para
 
     return info, text
 
@@ -858,7 +885,7 @@ def grade():
 
         try:
             doc = docx.Document(fpath)
-            info, text = extract_student_info(doc)
+            info, text = extract_student_info(doc, fname)
             images = extract_images(doc, doc_id)
 
             # 优先使用AI视觉评分
